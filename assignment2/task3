@@ -1,0 +1,86 @@
+import * as A from '../imp/L3-ast';
+import { Result, makeFailure, makeOk } from '../shared/result';
+import { isSymbolSExp, isEmptySExp, isCompoundSExp, Value, isClosure, compoundSExpToString } from '../imp/L3-value';
+import {isNumber, isString} from '../shared/type-predicates';
+import { is, map } from 'ramda';
+
+/*
+Purpose: Transform L3 AST to JavaScript program string
+Signature: l30ToJS(l2AST)
+Type: [EXP | Program] => Result<string>
+*/
+export const l30ToJS = (exp: A.Exp | A.Program): Result<string>  => 
+    makeOk(unParseL30(exp));
+
+export const unParseL30 = (exp: A.Program | A.Exp): string =>
+    A.isProgram(exp) ? unparseLExpsJS(exp.exps).join(";\n") :
+    A.isDefineExp(exp) ? `const ${exp.var.var} = ${unParseL30(exp.val)}` :
+    A.isCExp(exp) ? unparseCExp(exp) :
+    exp;
+
+export const unparseCExp = (exp: A.CExp): string =>
+    A.isAtomicExp(exp) ? unparseAtomic(exp) :
+    A.isCompoundExp(exp) ? unparseCompound(exp) :
+    exp;
+
+export const unparseAtomic = (exp: A.AtomicExp): string =>
+    A.isNumExp(exp) ? exp.val.toString() :
+    A.isBoolExp(exp) ? unparseBool(exp) :
+    A.isStrExp(exp) ? `"${exp.val}"` :
+    A.isPrimOp(exp) ? unparsePrimop(exp) :
+    A.isVarRef(exp) ? exp.var :
+    exp;
+
+const isUnary = (exp: A.PrimOp): boolean =>
+    exp.op === "not" || exp.op === "number?" || exp.op === "boolean?" ||
+    exp.op === "string?" || exp.op === "symbol?";
+
+export const unparsePrimop = (exp: A.PrimOp): string =>
+    exp.op === "=" ? '===' :
+    exp.op === "and" ? '&&' :
+    exp.op === "or" ? '||' :
+    exp.op === "eq?" ? '===' :
+    exp.op === "string=?" ? '===' :
+    exp.op === "not" ? '!' :
+    exp.op === "number?" ? '((x) => (typeof (x) === number))' :
+    exp.op === "boolean?" ? '((x) => (typeof (x) === boolean))' :
+    exp.op === "string?" ? '((x) => (typeof (x) === string))' :
+    exp.op === "symbol?" ? '((x) => (typeof (x) === symbol))' :
+    exp.op;
+
+const unparseBool = (exp: A.BoolExp): string =>
+    exp.val === true ? 'true' : 'false';
+
+const unparseCompound = (exp: A.CompoundExp): string =>
+    A.isAppExp(exp) ? unparseAppExp(exp) :
+    A.isIfExp(exp) ? `(${unParseL30(exp.test)} ? ${unParseL30(exp.then)} : ${unParseL30(exp.alt)})` :
+    A.isProcExp(exp) ? unparseProcExpJS(exp) :
+    A.isLetExp(exp) ? unparseLetExpJS(exp) :
+    A.isLitExp(exp) ? unparseLitExpJS(exp) :
+    exp;
+
+const unparseAppExp = (exp: A.AppExp): string =>
+    A.isPrimOp(exp.rator) && exp.rator.op == 'not' ? `(${unparsePrimop(exp.rator)}${unparseLExpsJS(exp.rands).join(",")})`:
+    A.isPrimOp(exp.rator) && isUnary(exp.rator) ? `${unparsePrimop(exp.rator)}(${unparseLExpsJS(exp.rands).join(",")})`:
+    A.isPrimOp(exp.rator) ? `(${unparseLExpsJS(exp.rands).join(" "+unParseL30(exp.rator)+" ")})` :
+    A.isVarRef(exp.rator) ? `${exp.rator.var}(${unparseLExpsJS(exp.rands).join(",")})`:
+    A.isCompoundExp(exp.rator) ? `${unParseL30(exp.rator)}(${unparseLExpsJS(exp.rands).join(",")})`:
+    "";
+
+function unparseLitExpJS(le: A.LitExp): string {
+    return isSymbolSExp(le.val) ? `Symbol.for(${unparseAtomic(A.makeStrExp(le.val.val))})` :
+        `${le.val}`;
+}
+
+const unparseProcExpJS = (pe: A.ProcExp): string => 
+    `((${map((p: A.VarDecl) => p.var, pe.args).join(",")}) => ${unparseLExpsJS(pe.body)})`
+
+const unparseLExpsJS = (les: A.Exp[]): string[] =>
+    map(unParseL30, les);
+
+const unparseLetExpJS = (le: A.LetExp) : string => 
+    `${unparseProcExpJS(A.makeProcExp(map((b: A.Binding) => b.var, le.bindings),le.body))}(${(map((b: A.Binding) => unParseL30(b.val), le.bindings)).join(",")})`
+    
+    
+    
+
